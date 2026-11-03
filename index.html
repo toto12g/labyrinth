@@ -160,6 +160,12 @@ input#code{font-family:var(--f-disp);font-weight:400;font-size:28px;text-align:c
 .who2 .p span{font-size:12px;color:var(--muted)}
 .who2 .p span.ok{color:var(--good);font-weight:800}
 .cdwrap{background:rgba(10,8,34,.55)}
+.againbar{margin-bottom:18px;display:grid;gap:12px;box-shadow:0 6px 0 rgba(0,0,0,.28),0 0 0 3px var(--gold)}
+.againhead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.againhead b{font-size:22px;color:var(--gold)}
+.againmsg{font-size:13px;color:var(--muted)}
+.againmsg.hot{color:var(--gold);font-weight:800;font-size:15px}
+.modal .againmsg{margin-bottom:0}
 .cdnum{font-family:var(--f-disp);font-size:clamp(80px,22vw,160px);color:var(--gold);text-shadow:0 8px 0 rgba(0,0,0,.4);line-height:1}
 .cdnum.small{font-size:clamp(44px,11vw,84px)}
 .cdnum.go{animation:cdpop .6s cubic-bezier(.2,1.6,.4,1)}
@@ -350,6 +356,7 @@ input#code{font-family:var(--f-disp);font-weight:400;font-size:28px;text-align:c
     </div>
 
     <div id="play" hidden>
+      <div class="card againbar" id="againBar" hidden></div>
       <div class="playgrid">
         <div class="card">
           <div class="bhead"><h2 id="oppTitle">相手の迷路</h2><span class="tag me">あなたが進む</span></div>
@@ -424,9 +431,9 @@ const SFX={step:()=>tone(660,.09,'square',.06,880),bump:()=>tone(140,.22,'sawtoo
 /* ---------- game state & protocol ---------- */
 function freshRound(S){Object.assign(S,{start:null,goal:null,walls:[],ready:false,req:{n:0,to:null},pos:null,seenAns:0,
   kWalls:[],kOpen:[],visited:[],ans:{n:0,ok:false,g:false},rej:0,opos:null,oTrail:[],oBumps:[],log:[],result:null});}
-function newState(o){const S={pid:rid(),nick:o.nick,host:o.host,cfg:o.cfg||null,round:o.cfg?o.cfg.round:0,oppPid:null,mode:o.mode,code:o.code||null};freshRound(S);return S;}
+function newState(o){const S={pid:rid(),nick:o.nick,host:o.host,cfg:o.cfg||null,round:o.cfg?o.cfg.round:0,again:-1,oppPid:null,mode:o.mode,code:o.code||null};freshRound(S);return S;}
 function pres(S){return{v:1,pid:S.pid,nick:S.nick,host:S.host,round:S.round,cfg:S.host?S.cfg:null,opp:S.host?S.oppPid:null,
-  ready:S.ready,start:S.ready?S.start:null,goal:S.ready?S.goal:null,req:S.req,ans:S.ans,rej:S.rej,done:S.result,
+  ready:S.ready,start:S.ready?S.start:null,goal:S.ready?S.goal:null,req:S.req,ans:S.ans,rej:S.rej,done:S.result,again:Number.isInteger(S.again)?S.again:-1,
   reveal:S.result?{goal:S.goal,walls:S.walls}:null};}
 function okStr(x,max){return typeof x==='string'?x.slice(0,max):'';}
 function okIdx(x,n){return Number.isInteger(x)&&x>=0&&x<n*n;}
@@ -478,7 +485,7 @@ function botChoose(B,goal){const n=B.cfg.n,p=B.pos,free=j=>!B.kWalls.includes(ek
   const any=shuffle(nbs(p,n).filter(free));return any.length?any[0]:nbs(p,n)[0];}
 function cpuT(){
   const B=newState({nick:'CPU',host:false,mode:'bot'});let hp=null,busy=false,alive=true;
-  function tick(){if(!alive)return;step(B,hp);
+  function tick(){if(!alive)return;step(B,hp);if(B.result)B.again=B.round;
     if(B.cfg&&!B.ready&&hp&&hp.round===B.round){Object.assign(B,genMaze(B.cfg.n,B.cfg.w));B.ready=true;step(B,hp);}
     const bp=pres(B);setTimeout(()=>alive&&onOpp(bp),180);
     if(!busy&&canMove(B,hp)){busy=true;setTimeout(()=>{busy=false;if(!alive||!canMove(B,hp))return;
@@ -536,15 +543,18 @@ function netT(S0){
 /* ---------- app ---------- */
 let S=null,O=null,T=null,tool='start',seenLog=0,lastBanner='',endShown=-1,hadOpp=false;
 function sanitizeOpp(o){if(!o||typeof o!=='object')return null;const c=JSON.parse(JSON.stringify(o));c.nick=okStr(c.nick,12)||'あいて';return c;}
-function onOpp(o){O=sanitizeOpp(o);if(!S)return;if(step(S,O)){save();T&&T.publish(pres(S));}render();}
-function commit(){step(S,O);save();T&&T.publish(pres(S));render();}
+function onOpp(o){O=sanitizeOpp(o);if(!S)return;const r0=S.round;let ch=step(S,O);
+  if(maybeRematch()){ch=true;step(S,O);}
+  if(S.round!==r0&&!S.host){resetView();tool='start';}
+  if(ch){save();T&&T.publish(pres(S));}render();}
+function commit(){step(S,O);maybeRematch();save();T&&T.publish(pres(S));render();}
 function save(){if(S&&S.mode==='online')ssSet('lab:save',S);}
 let toastT=0;function flash(msg){const t=$('#toast');t.textContent=msg;t.hidden=false;clearTimeout(toastT);toastT=setTimeout(()=>t.hidden=true,2400);}
 
 function nickVal(){const v=$('#nick').value.trim().slice(0,12);return v||'プレイヤー';}
 function cfgFromLobby(){let f=$('#first').value;if(f==='random')f=Math.random()<.5?'host':'guest';return{n:N,w:W,first:f,round:0};}
 function genCode(){const a='abcdefghjkmnpqrstuvwxyz23456789';let s='';for(let i=0;i<4;i++)s+=a[Math.random()*a.length|0];return s;}
-function resetView(){seenLog=0;lastBanner='';endShown=-1;hadOpp=false;startedRound=-1;cdUntil=0;$('#end').hidden=true;$('#cd').hidden=true;}
+function resetView(){seenLog=0;lastBanner='';endShown=-1;hadOpp=false;startedRound=-1;cdUntil=0;endOpenAt=0;modalClosed=false;$('#end').hidden=true;$('#againBar').hidden=true;$('#cd').hidden=true;}
 function hasNet(){return typeof window.Peer==='function';}
 
 function startOnline(st){
@@ -778,17 +788,40 @@ function renderPlay(){
     li.innerHTML=`<span class="dot ${x.w}"></span><span class="mv">${cn(x.from,n)} → ${cn(x.to,n)}</span>`+
       (x.g?'<span class="r g">ゴール！</span>':x.ok?'<span class="r o">進めた</span>':'<span class="r x">ゴツン・交代</span>');ul.appendChild(li);});
 
-  if(S.result&&endShown!==S.round){endShown=S.round;
-    setTimeout(()=>{if(!S||!S.result)return;const win=S.result==='win';(win?SFX.win:SFX.lose)();if(win)confetti();
-      const m=$('#endModal');m.innerHTML=`<div class="big ${win?'win':'lose'}">${win?'勝利！':'ざんねん…'}</div><p>${win?`${esc(on)}さんの迷路を${S.log.filter(x=>x.w==='me').length}手で抜けました。`:`${esc(on)}さんが先にゴールしました。`}</p>`;
-      const st=mk('div','stack');
-      if(S.host){const r=mk('button','btn me big','もう一戦（先攻こうたい）');r.onclick=()=>{S.cfg=Object.assign({},S.cfg,{round:S.cfg.round+1,first:S.cfg.first==='host'?'guest':'host'});S.round=S.cfg.round;freshRound(S);tool='start';resetView();commit();};st.appendChild(r);}
-      else st.appendChild(mk('p',null,'部屋をつくった人が「もう一戦」を押すと次のゲームが始まります。'));
-      const v=mk('button','btn','迷路の答えを見る');v.onclick=()=>{$('#end').hidden=true;};st.appendChild(v);
-      const l=mk('button','btn','ロビーに戻る');l.onclick=leave;st.appendChild(l);
-      m.appendChild(st);$('#end').hidden=false;},900);}
-  if(!S.result)$('#end').hidden=true;
+  renderEnd();
 }
+let endOpenAt=0,modalClosed=false;
+function wantAgain(){if(!S||!S.result)return;S.again=S.round;commit();}
+function againBlock(){
+  const box=mk('div','stack'),on=O?O.nick:'相手',mine=S.again===S.round,theirs=!!(O&&O.again===S.round);
+  if(!O){box.appendChild(mk('p','againmsg',`${on}が部屋にいません。戻ってくるのを待つか、ロビーから新しく部屋をつくってください。`));return box;}
+  if(theirs&&!mine)box.appendChild(mk('p','againmsg hot',`${on}さんがもう一度やりたがっています！`));
+  const b=mk('button','btn me big',mine?(theirs?'はじまります…':`${on}さんを待っています…`):'もう一度対戦する');
+  b.disabled=mine;b.onclick=wantAgain;box.appendChild(b);
+  if(!mine)box.appendChild(mk('p','againmsg','2人とも押すと、先攻を交代して同じ部屋で次の試合が始まります。'));
+  return box;}
+function renderEnd(){
+  const end=$('#end'),bar=$('#againBar');
+  if(!S.result){end.hidden=true;bar.hidden=true;return;}
+  const win=S.result==='win',on=O?O.nick:'相手';
+  if(endShown!==S.round){endShown=S.round;modalClosed=false;endOpenAt=Date.now()+900;
+    setTimeout(()=>{if(!S||!S.result)return;(win?SFX.win:SFX.lose)();if(win)confetti();render();},900);}
+  const show=Date.now()>=endOpenAt;
+  end.hidden=!show||modalClosed;bar.hidden=!show||!modalClosed;
+  if(!show)return;
+  const m=$('#endModal');m.innerHTML=`<div class="big ${win?'win':'lose'}">${win?'勝利！':'ざんねん…'}</div><p>${win?`${esc(on)}さんの迷路を${S.log.filter(x=>x.w==='me').length}手で抜けました。`:`${esc(on)}さんが先にゴールしました。`}</p>`;
+  const st=againBlock();
+  const v=mk('button','btn','迷路の答えを見る');v.onclick=()=>{modalClosed=true;render();};st.appendChild(v);
+  const l=mk('button','btn','ロビーに戻る');l.onclick=leave;st.appendChild(l);
+  m.appendChild(st);
+  bar.innerHTML='';const head=mk('div','againhead');head.appendChild(mk('b','disp',win?'勝利！':'ざんねん…'));
+  const r=mk('button','btn sm','結果を見る');r.onclick=()=>{modalClosed=false;render();};head.appendChild(r);
+  bar.append(head,againBlock());
+}
+function maybeRematch(){
+  if(!S||!S.host||!S.result||!O||O.round!==S.round||S.again!==S.round||O.again!==S.round)return false;
+  S.cfg=Object.assign({},S.cfg,{round:S.cfg.round+1,first:S.cfg.first==='host'?'guest':'host'});S.round=S.cfg.round;
+  freshRound(S);tool='start';resetView();return true;}
 window.addEventListener('beforeunload',e=>{if(S&&S.mode==='online'&&O&&!S.result){e.preventDefault();e.returnValue='';}});
 render();
 })();
