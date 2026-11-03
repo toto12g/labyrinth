@@ -143,6 +143,27 @@ input#code{font-family:var(--f-disp);font-weight:400;font-size:28px;text-align:c
 .checks .k{width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:800;flex:none}
 .checks .k.ok{background:var(--good);color:#06301b}.checks .k.ng{background:var(--bad);color:#fff}
 .stack{display:grid;gap:10px}
+.invitecard{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,260px);gap:18px;align-items:center;margin-bottom:18px;
+  background:linear-gradient(100deg,#2c2577,#3a2f8f);box-shadow:0 6px 0 rgba(0,0,0,.28),0 0 0 3px var(--op)}
+.invitecard.joined{grid-template-columns:auto minmax(0,1fr);box-shadow:0 6px 0 rgba(0,0,0,.28),0 0 0 3px var(--good)}
+.invitecard h2{margin:0 0 4px;font-size:22px}
+.invitecard p{color:var(--muted);font-size:14px}
+.invitecard .codebox{margin-top:12px;cursor:pointer}
+.invitecard .codebox .t{width:40px;height:46px;font-size:24px;border-radius:10px}
+.invitecard .acts{display:grid;gap:10px}
+@media (max-width:640px){.invitecard{grid-template-columns:1fr}}
+.who2{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
+.who2 .p{background:var(--bg2);border-radius:12px;padding:8px 10px;display:flex;gap:8px;align-items:center;min-width:0}
+.who2 .p .avatar{width:30px;height:30px;font-size:13px;border-radius:9px;box-shadow:none}
+.who2 .p div{display:grid;min-width:0;line-height:1.3}
+.who2 .p b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.who2 .p span{font-size:12px;color:var(--muted)}
+.who2 .p span.ok{color:var(--good);font-weight:800}
+.cdwrap{background:rgba(10,8,34,.55)}
+.cdnum{font-family:var(--f-disp);font-size:clamp(80px,22vw,160px);color:var(--gold);text-shadow:0 8px 0 rgba(0,0,0,.4);line-height:1}
+.cdnum.small{font-size:clamp(44px,11vw,84px)}
+.cdnum.go{animation:cdpop .6s cubic-bezier(.2,1.6,.4,1)}
+@keyframes cdpop{0%{transform:scale(.4);opacity:0}100%{transform:none;opacity:1}}
 .hint{font-size:13px;color:var(--muted);margin-top:12px}
 
 .playgrid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:18px;align-items:start}
@@ -301,6 +322,7 @@ input#code{font-family:var(--f-disp);font-weight:400;font-size:28px;text-align:c
     <div class="turnbar" id="banner"><b></b><span></span></div>
 
     <div id="setup" hidden>
+      <div class="card invitecard" id="inviteCard" hidden></div>
       <div class="setupgrid">
         <div class="card">
           <div class="toolbar" role="group" aria-label="置くもの">
@@ -312,6 +334,7 @@ input#code{font-family:var(--f-disp);font-weight:400;font-size:28px;text-align:c
           <p class="hint" id="setupCap"></p>
         </div>
         <div class="card">
+          <div class="who2" id="who2"></div>
           <div class="sticks"><div class="row"><span>のこりの棒</span><span id="count"></span></div><div class="meter" id="meter"><i></i></div></div>
           <ul class="checks" id="checks"></ul>
           <div class="stack">
@@ -351,6 +374,7 @@ input#code{font-family:var(--f-disp);font-weight:400;font-size:28px;text-align:c
     </div>
   </section>
 </div>
+<div id="cd" class="overlay cdwrap" hidden><div class="cdnum" id="cdnum"></div></div>
 <div id="end" class="overlay" hidden><div class="modal" id="endModal"></div></div>
 <canvas id="fx" hidden></canvas>
 <div class="toast" id="toast" hidden></div>
@@ -520,7 +544,7 @@ let toastT=0;function flash(msg){const t=$('#toast');t.textContent=msg;t.hidden=
 function nickVal(){const v=$('#nick').value.trim().slice(0,12);return v||'プレイヤー';}
 function cfgFromLobby(){let f=$('#first').value;if(f==='random')f=Math.random()<.5?'host':'guest';return{n:N,w:W,first:f,round:0};}
 function genCode(){const a='abcdefghjkmnpqrstuvwxyz23456789';let s='';for(let i=0;i<4;i++)s+=a[Math.random()*a.length|0];return s;}
-function resetView(){seenLog=0;lastBanner='';endShown=-1;hadOpp=false;$('#end').hidden=true;}
+function resetView(){seenLog=0;lastBanner='';endShown=-1;hadOpp=false;startedRound=-1;cdUntil=0;$('#end').hidden=true;$('#cd').hidden=true;}
 function hasNet(){return typeof window.Peer==='function';}
 
 function startOnline(st){
@@ -611,7 +635,14 @@ function render(){
   if(roomFull){banner('','この部屋はもう2人そろっています','コードを確かめるか、新しく部屋をつくってください。');$('#setup').hidden=true;return;}
   if(S.mode==='online'&&net==='unsupported'){banner('','このブラウザでは対戦できません','Chrome か Safari の新しいバージョンで開いてください。');$('#setup').hidden=true;return;}
   if(!S.cfg){banner('','部屋をさがしています…',lostHost?'部屋が見つかりません。コードが合っているか、部屋をつくった人がページを開いたままか確かめてください。':'部屋 '+S.code.toUpperCase()+' に接続中');return;}
-  if(P)renderPlay();else renderSetup();
+  if(P){if(startedRound!==S.round){startedRound=S.round;if(!S.log.length)countdown();}renderPlay();}else renderSetup();
+}
+let startedRound=-1,cdUntil=0;
+function countdown(){
+  const o=$('#cd'),num=$('#cdnum');cdUntil=Date.now()+2700;o.hidden=false;
+  ['3','2','1','スタート！'].forEach((t,i)=>setTimeout(()=>{if(!S){o.hidden=true;return;}num.textContent=t;num.classList.toggle('small',i===3);
+    num.classList.remove('go');void num.offsetWidth;num.classList.add('go');if(i<3)tone(440,.12,'triangle',.08);else SFX.turn();},i*650));
+  setTimeout(()=>{o.hidden=true;cdUntil=0;if(S)render();},2700);
 }
 function renderHud(){
   const h=$('#hud');h.innerHTML='';const P=playing(S,O),t=P&&!S.result&&isTurn(S,O),ot=P&&!S.result&&!isTurn(S,O);
@@ -641,10 +672,34 @@ function setupProblems(){const n=S.cfg.n,p=[];
   const path=S.start!=null&&S.goal!=null&&reach(n,S.walls,S.start,S.goal);
   p.push([path,path?'ゴールまで道がある':'ゴールまでの道がふさがっています（禁止）']);
   return p;}
+function renderInvite(){
+  const ic=$('#inviteCard');
+  if(S.mode!=='online'){ic.hidden=true;return;}
+  ic.hidden=false;const code=S.code.toUpperCase();
+  if(!O){
+    ic.className='card invitecard';
+    ic.innerHTML=`<div><h2>友達を招待しよう</h2><p>招待リンクをDiscordに貼ってください。待っているあいだに迷路を作り始めてOK。2人とも「準備OK」を押したらスタートします。</p>
+      <div class="codebox" title="タップでコピー">${code.split('').map(c=>`<span class="t">${c}</span>`).join('')}</div></div><div class="acts"></div>`;
+    const acts=ic.querySelector('.acts');
+    if(isWeb){const b1=mk('button','btn gold big','招待リンクをコピー');b1.onclick=()=>copyText(inviteUrl(code),'招待リンクをコピーしました。Discordに貼ってね',b1,'招待リンクをコピー');acts.appendChild(b1);}
+    const b2=mk('button','btn','コードだけコピー');b2.onclick=()=>copyText(code,`コード ${code} をコピーしました`,b2,'コードだけコピー');acts.appendChild(b2);
+    ic.querySelector('.codebox').onclick=()=>copyText(code,`コード ${code} をコピーしました`);
+  }else{
+    ic.className='card invitecard joined';
+    ic.innerHTML=`<div class="avatar op">${esc(initial(O.nick))}</div><div><h2>${S.host?`${esc(O.nick)}さんが入りました！`:`${esc(O.nick)}さんの部屋に入りました！`}</h2><p>いっしょに迷路を作りましょう。2人とも「準備OK」を押したらスタートします。</p></div>`;
+  }
+}
+function renderWho2(){
+  const el=$('#who2');const st=(r)=>r?'<span class="ok">準備OK</span>':'<span>作成中…</span>';
+  el.innerHTML=`<div class="p"><div class="avatar">${esc(initial(S.nick))}</div><div><b>${esc(S.nick)}</b>${st(S.ready)}</div></div>`+
+    (O?`<div class="p"><div class="avatar op">${esc(initial(O.nick))}</div><div><b>${esc(O.nick)}</b>${st(O.ready&&O.round===S.round)}</div></div>`
+      :`<div class="p"><div class="avatar off">?</div><div><b>${S.mode==='online'?'友達':'CPU'}</b><span>${S.mode==='online'?'まだ来ていません':'準備中…'}</span></div></div>`);
+}
 function renderSetup(){
   const n=S.cfg.n,w=S.cfg.w,locked=S.ready;
-  if(locked)banner('gold','準備OK！相手を待っています',O?`${O.nick}さんが迷路を作っています。そろったらすぐ始まります。`:(S.mode==='online'?'上の「招待リンクをコピー」でリンクを友達に送ってください。':''));
-  else banner('me','迷路をつくろう',`スタートとゴールを決めて、棒を${w}本まで置けます。`+(S.mode==='online'&&!O?' 先に招待リンクを友達に送っておくとスムーズです。':''));
+  renderInvite();renderWho2();
+  if(locked)banner('gold','準備OK！相手を待っています',O?`${O.nick}さんが迷路を作っています。2人そろったらスタート！`:(S.mode==='online'?'まだ友達が来ていません。招待リンクを送ってください。':''));
+  else banner('me','迷路をつくろう',`スタートとゴールを決めて、棒を${w}本まで置けます。`+(O&&O.ready?` ${O.nick}さんは準備OKです！`:''));
   document.querySelectorAll('[data-tool]').forEach(b=>{b.setAttribute('aria-pressed',String(b.dataset.tool===tool));b.disabled=locked;});
   $('#count').textContent=`${w-S.walls.length} / ${w}`;
   const m=$('#meter');m.querySelector('i').style.width=(100*(w-S.walls.length)/w)+'%';m.classList.toggle('full',S.walls.length>=w);
@@ -670,7 +725,7 @@ $('#auto').onclick=()=>{Object.assign(S,genMaze(S.cfg.n,S.cfg.w));tool='wall';SF
 $('#clear').onclick=()=>{S.walls=[];render();};
 $('#ready').onclick=()=>{if(!setupProblems().every(x=>x[0]))return;S.ready=true;SFX.turn();commit();};
 
-function tryMove(to){if(!canMove(S,O))return;
+function tryMove(to){if(!canMove(S,O)||Date.now()<cdUntil)return;
   if(to<0){flash('盤の外には出られません');return;}
   if(S.kWalls.includes(ek(S.pos,to))){flash('そこは壁だと分かっています');return;}
   S.req={n:S.req.n+1,to};commit();}
