@@ -449,6 +449,8 @@ function step(S,O){
   }
   if(!S.cfg||O.round!==S.round)return ch;
   const n=S.cfg.n;
+  // opponent cancelled "ready" before any move: go back to building
+  if(!O.ready&&!S.log.length&&!S.result&&(S.pos!=null||S.opos!=null)){S.pos=null;S.opos=null;S.visited=[];S.oTrail=[];ch=true;}
   if(S.ready&&O.ready&&okIdx(O.start,n)){
     if(S.pos==null){S.pos=O.start;S.visited=[O.start];ch=true;}
     if(S.opos==null){S.opos=S.start;S.oTrail=[S.start];ch=true;}
@@ -645,7 +647,8 @@ function render(){
   if(roomFull){banner('','この部屋はもう2人そろっています','コードを確かめるか、新しく部屋をつくってください。');$('#setup').hidden=true;return;}
   if(S.mode==='online'&&net==='unsupported'){banner('','このブラウザでは対戦できません','Chrome か Safari の新しいバージョンで開いてください。');$('#setup').hidden=true;return;}
   if(!S.cfg){banner('','部屋をさがしています…',lostHost?'部屋が見つかりません。コードが合っているか、部屋をつくった人がページを開いたままか確かめてください。':'部屋 '+S.code.toUpperCase()+' に接続中');return;}
-  if(P){if(startedRound!==S.round){startedRound=S.round;if(!S.log.length)countdown();}renderPlay();}else renderSetup();
+  if(P){if(startedRound!==S.round){startedRound=S.round;if(!S.log.length)countdown();}renderPlay();}
+  else{if(startedRound===S.round&&!S.log.length){startedRound=-1;cdUntil=0;$('#cd').hidden=true;}renderSetup();}
 }
 let startedRound=-1,cdUntil=0;
 function countdown(){
@@ -708,7 +711,7 @@ function renderWho2(){
 function renderSetup(){
   const n=S.cfg.n,w=S.cfg.w,locked=S.ready;
   renderInvite();renderWho2();
-  if(locked)banner('gold','準備OK！相手を待っています',O?`${O.nick}さんが迷路を作っています。2人そろったらスタート！`:(S.mode==='online'?'まだ友達が来ていません。招待リンクを送ってください。':''));
+  if(locked)banner('gold','準備OK！相手を待っています',(O?`${O.nick}さんが迷路を作っています。2人そろったらスタート！`:(S.mode==='online'?'まだ友達が来ていません。招待リンクを送ってください。':''))+(canCancel()?' 直したいときは「準備OKを取り消して作り直す」を押してください。':''));
   else banner('me','迷路をつくろう',`スタートとゴールを決めて、棒を${w}本まで置けます。`+(O&&O.ready?` ${O.nick}さんは準備OKです！`:''));
   document.querySelectorAll('[data-tool]').forEach(b=>{b.setAttribute('aria-pressed',String(b.dataset.tool===tool));b.disabled=locked;});
   $('#count').textContent=`${w-S.walls.length} / ${w}`;
@@ -727,13 +730,18 @@ function renderSetup(){
   $('#setupCap').textContent=locked?'この迷路で相手を待ち受けます。':tool==='wall'?'マスとマスの間の線をタップすると棒を置けます。もう一度タップで外せます。':tool==='start'?'スタートにするマスをタップしてください。':'ゴールにするマスをタップしてください。';
   const pr=setupProblems(),ul=$('#checks');ul.innerHTML='';
   pr.forEach(([ok,t])=>{const li=mk('li');li.innerHTML=`<span class="k ${ok?'ok':'ng'}">${ok?'✓':'✕'}</span><span>${esc(t)}</span>`;ul.appendChild(li);});
-  $('#ready').disabled=locked||!pr.every(x=>x[0]);$('#auto').disabled=locked;$('#clear').disabled=locked;
-  $('#ready').textContent=locked?'準備OK':'準備OK！';
+  const rb=$('#ready');$('#auto').disabled=locked;$('#clear').disabled=locked;
+  if(locked){const can=canCancel();rb.className='btn big';rb.disabled=!can;rb.textContent=can?'準備OKを取り消して作り直す':'まもなくスタート！';}
+  else{rb.className='btn me big';rb.disabled=!pr.every(x=>x[0]);rb.textContent='準備OK！';}
 }
 document.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>{tool=b.dataset.tool;render();});
 $('#auto').onclick=()=>{Object.assign(S,genMaze(S.cfg.n,S.cfg.w));tool='wall';SFX.place();render();};
 $('#clear').onclick=()=>{S.walls=[];render();};
-$('#ready').onclick=()=>{if(!setupProblems().every(x=>x[0]))return;S.ready=true;SFX.turn();commit();};
+function canCancel(){return!!(S&&S.ready&&!S.log.length&&!S.result&&!(O&&O.ready&&O.round===S.round));}
+function unstart(X){X.pos=null;X.opos=null;X.visited=[];X.oTrail=[];}
+$('#ready').onclick=()=>{
+  if(S.ready){if(!canCancel())return;S.ready=false;unstart(S);SFX.place();commit();flash('準備OKを取り消しました。迷路を直せます');return;}
+  if(!setupProblems().every(x=>x[0]))return;S.ready=true;SFX.turn();commit();};
 
 function tryMove(to){if(!canMove(S,O)||Date.now()<cdUntil)return;
   if(to<0){flash('盤の外には出られません');return;}
