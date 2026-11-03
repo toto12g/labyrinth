@@ -284,10 +284,10 @@ input#code{font-family:var(--f-disp);font-weight:400;font-size:28px;text-align:c
           <li><span>盤は<b>6×6</b>、棒は<b>20本</b>。棒1本で、マスとマスの間の1辺をふさげます。</span></li>
           <li><span>それぞれ自分の迷路を作ります。<b>スタート</b>と<b>ゴール</b>のマスを決めて、棒で壁を置きます。</span></li>
           <li><span>ゴールを壁で囲んでふさぐのは<b>禁止</b>です。スタートからゴールまで必ず道を残します。</span></li>
-          <li><span>相手に見えるのはあなたの<b>スタート地点だけ</b>です。お互い相手の迷路を1マスずつ進みます。</span></li>
+          <li><span>相手に見えるのは<b>スタートとゴールの位置だけ</b>。壁はゲームが終わるまで見えません。お互い相手の迷路を1マスずつ進みます。</span></li>
           <li><span>進めたら<b>もう一度</b>あなたの番。壁に当たったらその場で止まり、相手の番です。先にゴールしたほうの勝ち！</span></li>
         </ol>
-        <div><div id="demo"></div><p class="demo-cap">例：赤い線は当たって見つけた壁、色のついたマスは通った道。ゴールの場所は最後まで分かりません。</p></div>
+        <div><div id="demo"></div><p class="demo-cap">例：赤い線は当たって見つけた壁、色のついたマスは通った道。星がゴール。どこに壁があるかは当たってみるまで分かりません。</p></div>
       </div>
     </details>
   </section>
@@ -321,7 +321,7 @@ input#code{font-family:var(--f-disp);font-weight:400;font-size:28px;text-align:c
               <button id="clear" class="btn">棒を全部外す</button>
             </div>
           </div>
-          <p class="hint">相手に伝わるのはスタート地点だけ。壁とゴールはこの画面の中にだけあります。</p>
+          <p class="hint">相手に伝わるのはスタートとゴールの位置だけ。壁はこの画面の中にだけあって、ゲームが終わるまで相手には見えません。</p>
         </div>
       </div>
     </div>
@@ -402,7 +402,7 @@ function freshRound(S){Object.assign(S,{start:null,goal:null,walls:[],ready:fals
   kWalls:[],kOpen:[],visited:[],ans:{n:0,ok:false,g:false},rej:0,opos:null,oTrail:[],oBumps:[],log:[],result:null});}
 function newState(o){const S={pid:rid(),nick:o.nick,host:o.host,cfg:o.cfg||null,round:o.cfg?o.cfg.round:0,oppPid:null,mode:o.mode,code:o.code||null};freshRound(S);return S;}
 function pres(S){return{v:1,pid:S.pid,nick:S.nick,host:S.host,round:S.round,cfg:S.host?S.cfg:null,opp:S.host?S.oppPid:null,
-  ready:S.ready,start:S.ready?S.start:null,req:S.req,ans:S.ans,rej:S.rej,done:S.result,
+  ready:S.ready,start:S.ready?S.start:null,goal:S.ready?S.goal:null,req:S.req,ans:S.ans,rej:S.rej,done:S.result,
   reveal:S.result?{goal:S.goal,walls:S.walls}:null};}
 function okStr(x,max){return typeof x==='string'?x.slice(0,max):'';}
 function okIdx(x,n){return Number.isInteger(x)&&x>=0&&x<n*n;}
@@ -444,8 +444,9 @@ function playing(X,Y){return!!(X.cfg&&X.ready&&Y&&Y.ready&&Y.round===X.round&&X.
 function canMove(X,Y){return playing(X,Y)&&!X.result&&!Y.done&&X.req.n===X.seenAns&&isTurn(X,Y);}
 
 /* ---------- CPU ---------- */
-function botChoose(B){const n=B.cfg.n,p=B.pos,free=j=>!B.kWalls.includes(ek(p,j));
-  const fresh=shuffle(nbs(p,n).filter(j=>free(j)&&!B.visited.includes(j)));if(fresh.length)return fresh[0];
+function botChoose(B,goal){const n=B.cfg.n,p=B.pos,free=j=>!B.kWalls.includes(ek(p,j));
+  const score=j=>(goal!=null?dist(j,goal,n):0)+Math.random()*1.2;
+  const fresh=shuffle(nbs(p,n).filter(j=>free(j)&&!B.visited.includes(j))).sort((a,b)=>score(a)-score(b));if(fresh.length)return fresh[0];
   const open=new Set(B.kOpen),prev=new Map([[p,-1]]),q=[p];
   while(q.length){const u=q.shift();
     if(u!==p&&nbs(u,n).some(v=>!B.visited.includes(v)&&!B.kWalls.includes(ek(u,v)))){let x=u;while(prev.get(x)!==p)x=prev.get(x);return x;}
@@ -457,7 +458,7 @@ function cpuT(){
     if(B.cfg&&!B.ready&&hp&&hp.round===B.round){Object.assign(B,genMaze(B.cfg.n,B.cfg.w));B.ready=true;step(B,hp);}
     const bp=pres(B);setTimeout(()=>alive&&onOpp(bp),180);
     if(!busy&&canMove(B,hp)){busy=true;setTimeout(()=>{busy=false;if(!alive||!canMove(B,hp))return;
-      B.req={n:B.req.n+1,to:botChoose(B)};onOpp(pres(B));},900);}
+      B.req={n:B.req.n+1,to:botChoose(B,hp&&Number.isInteger(hp.goal)?hp.goal:null)};onOpp(pres(B));},900);}
   }
   return{publish(p){hp=JSON.parse(JSON.stringify(p));setTimeout(tick,150);},leave(){alive=false;}};
 }
@@ -586,7 +587,7 @@ function board(n,o){
   return g;
 }
 (function(){const n=5,hit=['7-12','6-7'],trail=[0,5,10,11,16];
-  $('#demo').appendChild(board(n,{cell:i=>({cls:trail.includes(i)?'trail':'',html:i===16?pawn('me'):i===0?MK.s:i===24?MK.q:''}),
+  $('#demo').appendChild(board(n,{cell:i=>({cls:(trail.includes(i)?'trail':'')+(i===24?' goal':''),html:i===16?pawn('me'):i===0?MK.s:i===24?MK.g:''}),
     edge:e=>hit.includes(e)?'hit':''}));})();
 
 /* ---------- effects ---------- */
@@ -685,7 +686,7 @@ function renderPlay(){
     fresh.forEach(x=>{if(x.w==='me'){if(x.g){}else if(x.ok){SFX.step();setTimeout(()=>popup('#oppWrap','進めた！','good'),0);}else{SFX.bump();bonkMe=true;setTimeout(()=>popup('#oppWrap','ゴツン！','bad'),0);}}
       else{if(x.ok)SFX.step();else{SFX.bump();bonkOp=true;setTimeout(()=>popup('#myWrap','ゴツン！','bad'),0);}}});
     if(!S.result&&last&&last.w==='op'&&!last.ok)setTimeout(SFX.turn,260);}
-  if(S.result==='win')banner('gold','ゴール！あなたの勝ち！',`${cn(S.pos,n)} が${on}さんのゴールでした。`);
+  if(S.result==='win')banner('gold','ゴール！あなたの勝ち！',`${on}さんの迷路を抜けて ${cn(S.pos,n)} にたどり着きました。`);
   else if(S.result==='lose')banner('op',`${on}さんがゴール！`,`あなたのゴール ${cn(S.goal,n)} にたどり着かれました。`);
   else if(pend)banner('me','……',`${cn(S.pos,n)} から ${cn(S.req.to,n)} へ進めるかな？`);
   else if(turn)banner('me',last&&last.w==='me'&&last.ok?'進めた！もう一回':'あなたのターン',`いま ${cn(S.pos,n)}。光っているマスか矢印で進もう。壁に当たったら交代。`);
@@ -698,7 +699,7 @@ function renderPlay(){
   $('#oppTitle').textContent=`${on}さんの迷路`;
   const A=$('#oppBoard');A.innerHTML='';
   A.appendChild(board(n,{
-    cell:i=>{const isG=rv&&i===rv.goal;const cls=[S.visited.includes(i)?'trail':'',targets.includes(i)?'target':'',isG?'goal':''].join(' ');
+    cell:i=>{const isG=okIdx(O.goal,n)?i===O.goal:(rv&&i===rv.goal);const cls=[S.visited.includes(i)?'trail':'',targets.includes(i)?'target':'',isG?'goal':''].join(' ');
       const inner=i===O.start?MK.s:isG?MK.g:'';
       return{cls,tab:targets.includes(i),html:i===S.pos?pawn('me',bonkMe):inner};},
     edge:e=>S.kWalls.includes(e)?'hit'+(e===flashMe?' flash':''):(rv&&Array.isArray(rv.walls)&&rv.walls.includes(e))?'ghost':'',
@@ -706,8 +707,8 @@ function renderPlay(){
   document.querySelectorAll('#pad button').forEach(b=>{const j=nb(S.pos,n,b.dataset.d);
     b.innerHTML=`<span class="a">${ARW[b.dataset.d]}</span><span>${j<0?'外':cn(j,n)}</span>`;b.disabled=!my||j<0||S.kWalls.includes(ek(S.pos,j));});
   $('#pad').hidden=!!S.result;
-  $('#oppStats').innerHTML=rv?`<span class="stat">しま模様の線が${esc(on)}さんの迷路の壁、星がゴールでした</span>`:
-    `<span class="stat"><b>${S.kWalls.length}</b>見つけた壁</span><span class="stat"><b>${S.visited.length}</b>通ったマス</span><span class="stat"><b>${cn(S.pos,n)}</b>いまの場所</span>`;
+  $('#oppStats').innerHTML=rv?`<span class="stat">しま模様の線が${esc(on)}さんの迷路の壁でした</span>`:
+    `<span class="stat"><b>${cn(S.pos,n)}</b>いまの場所</span>`+(okIdx(O.goal,n)?`<span class="stat"><b>${dist(S.pos,O.goal,n)}</b>ゴールまでの距離</span>`:'')+`<span class="stat"><b>${S.kWalls.length}</b>見つけた壁</span>`;
 
   const B=$('#myBoard');B.innerHTML='';
   B.appendChild(board(n,{
